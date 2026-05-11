@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_NAME_LEN 50
 #define FLIGHT_FILE "flights.dat"
@@ -12,6 +13,7 @@ typedef struct {
     char name[MAX_NAME_LEN];
     int age;
     char gender;
+    int pnr;
 } Passenger;
 
 typedef struct {
@@ -50,6 +52,7 @@ void displaySeatMap(Flight *f);
 Flight* findFlightByID(int id);
 
 int main() {
+    srand(time(NULL));
     loadFlights();
     int mode;
 
@@ -85,9 +88,18 @@ void loadFlights() {
     FILE* file = fopen(FLIGHT_FILE, "rb");
     if (!file) return;
     fread(&flightCount, sizeof(int), 1, file);
-    flights = (Flight*)malloc(sizeof(Flight) * flightCount);
+    if (flightCount > 0) {
+        flights = (Flight*)malloc(sizeof(Flight) * flightCount);
+    }
     for (int i = 0; i < flightCount; i++) {
-        fread(&flights[i], sizeof(Flight) - sizeof(Seat*), 1, file);
+        fread(&flights[i].flightID, sizeof(int), 1, file);
+        fread(flights[i].source, sizeof(char), 30, file);
+        fread(flights[i].destination, sizeof(char), 30, file);
+        fread(flights[i].date, sizeof(char), 15, file);
+        fread(flights[i].time, sizeof(char), 10, file);
+        fread(&flights[i].totalSeats, sizeof(int), 1, file);
+        fread(&flights[i].isActive, sizeof(int), 1, file);
+        
         flights[i].seats = (Seat*)malloc(sizeof(Seat) * flights[i].totalSeats);
         fread(flights[i].seats, sizeof(Seat), flights[i].totalSeats, file);
     }
@@ -99,7 +111,14 @@ void saveFlights() {
     if (!file) return;
     fwrite(&flightCount, sizeof(int), 1, file);
     for (int i = 0; i < flightCount; i++) {
-        fwrite(&flights[i], sizeof(Flight) - sizeof(Seat*), 1, file);
+        fwrite(&flights[i].flightID, sizeof(int), 1, file);
+        fwrite(flights[i].source, sizeof(char), 30, file);
+        fwrite(flights[i].destination, sizeof(char), 30, file);
+        fwrite(flights[i].date, sizeof(char), 15, file);
+        fwrite(flights[i].time, sizeof(char), 10, file);
+        fwrite(&flights[i].totalSeats, sizeof(int), 1, file);
+        fwrite(&flights[i].isActive, sizeof(int), 1, file);
+        
         fwrite(flights[i].seats, sizeof(Seat), flights[i].totalSeats, file);
     }
     fclose(file);
@@ -147,13 +166,13 @@ void addFlight() {
     printf("Enter Flight ID: ");
     scanf("%d", &f->flightID);
     printf("Source: ");
-    scanf("%s", f->source);
+    scanf(" %[^\n]", f->source);
     printf("Destination: ");
-    scanf("%s", f->destination);
+    scanf(" %[^\n]", f->destination);
     printf("Date (dd-mm-yyyy): ");
-    scanf("%s", f->date);
+    scanf(" %[^\n]", f->date);
     printf("Time (e.g., 10:00AM): ");
-    scanf("%s", f->time);
+    scanf(" %[^\n]", f->time);
     printf("Total Seats (max 100): ");
     scanf("%d", &f->totalSeats);
 
@@ -225,11 +244,11 @@ void bookTicketByRoute() {
     int matched = 0;
 
     printf("Enter Source City: ");
-    scanf("%s", src);
+    scanf(" %[^\n]", src);
     printf("Enter Destination City: ");
-    scanf("%s", dest);
+    scanf(" %[^\n]", dest);
 
-    Flight* options[10];
+    Flight** options = (Flight**)malloc(sizeof(Flight*) * flightCount);
     for (int i = 0; i < flightCount; i++) {
         if (flights[i].isActive && strcmp(flights[i].source, src) == 0 && strcmp(flights[i].destination, dest) == 0) {
             options[matched++] = &flights[i];
@@ -239,6 +258,7 @@ void bookTicketByRoute() {
 
     if (matched == 0) {
         printf("No flights found.\n");
+        free(options);
         return;
     }
 
@@ -247,6 +267,7 @@ void bookTicketByRoute() {
     scanf("%d", &choice);
     if (choice < 1 || choice > matched) {
         printf("Invalid selection.\n");
+        free(options);
         return;
     }
 
@@ -258,6 +279,7 @@ void bookTicketByRoute() {
     printf("Total Seats: %d | Booked: %d | Remaining: %d\n", f->totalSeats, booked, remaining);
     if (remaining == 0) {
         printf("No available seats.\n");
+        free(options);
         return;
     }
 
@@ -283,6 +305,8 @@ void bookTicketByRoute() {
     printf("Enter Gender (M/F): ");
     scanf(" %c", &p.gender);
 
+    p.pnr = 100000 + rand() % 900000;
+
     Seat *s = &f->seats[seatNo - 1];
     s->isBooked = 1;
     s->passenger = p;
@@ -290,35 +314,38 @@ void bookTicketByRoute() {
 
     FILE *log = fopen(BOOKING_FILE, "a");
     if (log) {
-        fprintf(log, "Flight %d (%s -> %s), Date: %s, Time: %s\n", f->flightID, f->source, f->destination, f->date, f->time);
+        fprintf(log, "PNR: %d, Flight %d (%s -> %s), Date: %s, Time: %s\n", p.pnr, f->flightID, f->source, f->destination, f->date, f->time);
         fprintf(log, "Seat: %d, Passenger: %s, Age: %d, Gender: %c\n\n", seatNo, p.name, p.age, p.gender);
         fclose(log);
     }
 
-    printf("Booking successful!\n");
+    printf("Booking successful! Your PNR is: %d\n", p.pnr);
     generateTicket(*f, *s);
+    free(options);
 }
 
 void cancelTicket() {
-    int id, seatNo;
-    printf("Enter Flight ID: ");
-    scanf("%d", &id);
-    Flight *f = findFlightByID(id);
-    if (!f) {
-        printf("Flight not found.\n");
-        return;
-    }
+    int pnr;
+    printf("Enter your 6-digit PNR to cancel: ");
+    scanf("%d", &pnr);
 
-    printf("Enter Seat Number to Cancel: ");
-    scanf("%d", &seatNo);
-    if (seatNo < 1 || seatNo > f->totalSeats || !f->seats[seatNo - 1].isBooked) {
-        printf("Invalid seat.\n");
-        return;
+    int found = 0;
+    for (int i = 0; i < flightCount; i++) {
+        if (!flights[i].isActive) continue;
+        for (int j = 0; j < flights[i].totalSeats; j++) {
+            if (flights[i].seats[j].isBooked && flights[i].seats[j].passenger.pnr == pnr) {
+                flights[i].seats[j].isBooked = 0;
+                found = 1;
+                saveFlights();
+                printf("Booking with PNR %d on Flight %d canceled successfully.\n", pnr, flights[i].flightID);
+                return;
+            }
+        }
     }
-
-    f->seats[seatNo - 1].isBooked = 0;
-    saveFlights();
-    printf("Booking canceled.\n");
+    
+    if (!found) {
+        printf("Invalid PNR. Booking not found.\n");
+    }
 }
 
 void viewPassengers() {
@@ -335,13 +362,14 @@ void viewPassengers() {
     for (int i = 0; i < f->totalSeats; i++) {
         if (f->seats[i].isBooked) {
             Passenger *p = &f->seats[i].passenger;
-            printf("Seat %d: %s, Age: %d, Gender: %c\n", i + 1, p->name, p->age, p->gender);
+            printf("Seat %d: %s, Age: %d, Gender: %c, PNR: %d\n", i + 1, p->name, p->age, p->gender, p->pnr);
         }
     }
 }
 
 void generateTicket(Flight f, Seat s) {
     printf("\n========= TICKET =========\n");
+    printf("PNR: %d\n", s.passenger.pnr);
     printf("Passenger: %s\n", s.passenger.name);
     printf("Age: %d | Gender: %c\n", s.passenger.age, s.passenger.gender);
     printf("Flight: %d (%s -> %s)\n", f.flightID, f.source, f.destination);
